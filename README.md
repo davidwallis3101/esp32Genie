@@ -1,12 +1,13 @@
+[![Build Status](https://travis-ci.org/davidwallis3101/esp32Genie.svg?branch=master)](https://travis-ci.org/davidwallis3101/esp32Genie)
 
-espGenie
+esp32Genie
 ===========================================
 This is a work in progress to attempt to be able to have a locally controlled switch with no external dependency on HomeGenie, IE the switch will still allow local switching without HomeGenie being up.
 
 
 ### About
 
-This software is for allowing an ESP8266-12 module to function as a light switch or remote controlled socket, allowing for the status to be set locally or remotely (via MQTT)
+This software is for allowing an ESP32 module to function as a light switch or remote controlled socket, allowing for the status to be set locally or remotely (via MQTT)
 
 The switch can be controlled locally or remotely and will send the status of the switch via MQTT to HomeGenie. Provision is made for querying the switch and also telling a light to flash (Security systems?)
 
@@ -34,7 +35,7 @@ The switch can be controlled locally or remotely and will send the status of the
 
 ## Compiling
 
-- Compile and upload to your esp8266 module via a serial connection  
+- Compile and upload to your esp8266 module via a serial connection
 
 ### Issues and support ###
 

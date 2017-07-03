@@ -25,23 +25,23 @@ before_install:
   - export PATH=$PATH:~/arduino-ide
 
   # Configure for Esp32
-  - mkdir -p ~/Arduino/hardware/espressif #&&
-  - cd ~/Arduino/hardware/espressif #&&
-  - git clone https://github.com/espressif/arduino-esp32.git esp32 #&&
-  - cd esp32/tools/ #&&
-  - python get.py #&&
-  - cd $TRAVIS_BUILD_DIR;
+  - mkdir -p ~/arduino-ide/hardware/espressif
+  - cd ~/arduino-ide/hardware/espressif
+  - git clone https://github.com/espressif/arduino-esp32.git esp32
+  - cd esp32/tools/
+  - python get.py
 
 install:
-  - mkdir -p ~/Arduino/libraries
-  - ln -s $PWD ~/Arduino/libraries/.
+  - mkdir -p ~/arduino-ide/libraries
+  # - ln -s $PWD ~/Arduino/libraries/.
+  - ln -s ~/arduino-ide/hardware/espressif/esp32/libraries ~/arduino-ide/libraries/.
 
   #- ln -s $PWD /usr/local/share/arduino/libraries/Adafruit_FONA
   # boards manager not working on 1.6.7 - 1.6.8
   # - arduino --pref "boardsmanager.additional.urls=http://arduino.esp8266.com/stable/package_esp8266com_index.json" --save-prefs
 
   # Install required librarys
-  - arduino --install-library "Adafruit SleepyDog Library,Adafruit MQTT Library"
+  - arduino --install-library "PubSubClient,DallasTemperature,OneWire"
 
   # Set Preferences
   - arduino --pref "compiler.warning_level=all" --save-prefs

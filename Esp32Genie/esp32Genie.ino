@@ -76,7 +76,7 @@ int triggered = 0;
 
 // Replace with your network credentials
 const char* ssid     = "dw-2g";
-const char* password = "68421353124";
+const char* password = "";
 
 SimpleBLE ble;
 

@@ -1,4 +1,4 @@
-language: python #c
+language: generic #python #c
 
 python:
   - "2.7"

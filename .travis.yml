@@ -61,7 +61,7 @@ script:
   # - arduino --board esp8266:esp8266:generic --save-prefs
 
   # build specifying board
-  - arduino --verbose-build --verify --board espressif:esp32:esp32:FlashFreq=80 $HOME/esp32genie/Esp32Genie/esp32Genie.ino;
+  - arduino --verbose-build --verify --board espressif:esp32:esp32:FlashFreq=80 $TRAVIS_BUILD_DIR/Esp32Genie/esp32Genie.ino;
 
   #- arduino --verify --board arduino:avr:uno $PWD/examples/FONAtest/FONAtest.ino
   #- arduino --verify --board arduino:avr:uno $PWD/examples/IncomingCall/IncomingCall.ino

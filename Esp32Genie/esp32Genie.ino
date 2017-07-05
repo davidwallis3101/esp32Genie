@@ -1,13 +1,14 @@
 #include <Arduino.h>
 #include <WiFi.h>          //ESP32 WiFi Library
-// #include <DNSServer.h>            //Local DNS Server used for redirecting all requests to the configuration portal
-// #include <ESP8266WebServer.h>     //Local WebServer used to serve the configuration portal
-// #include <WiFiManager.h>          // https://github.com/tzapu/WiFiManager WiFi Configuration Magic
-#include <PubSubClient.h>         // http://pubsubclient.knolleary.net/
-#include <DallasTemperature.h>    // https://github.com/milesburton/Arduino-Temperature-Control-Library
-#include <OneWire.h>              // https://www.pjrc.com/teensy/td_libs_OneWire.html
-#include <SimpleBLE.h>            // Bluetooth for esp32
-
+// #include <DNSServer.h>          //Local DNS Server used for redirecting all requests to the configuration portal
+// #include <ESP8266WebServer.h>   //Local WebServer used to serve the configuration portal
+// #include <WiFiManager.h>        // https://github.com/tzapu/WiFiManager WiFi Configuration Magic
+#include <PubSubClient.h>          // http://pubsubclient.knolleary.net/
+#include <DallasTemperature.h>     // https://github.com/milesburton/Arduino-Temperature-Control-Library
+#include <OneWire.h>               // https://www.pjrc.com/teensy/td_libs_OneWire.html
+#include <SimpleBLE.h>             // Bluetooth for esp32
+#include "mqttConfig.h"            // mqtt Settings
+#include "pinMappings.h"           // pin mappings for switches, relays etc
 
 const char* espGenieFirmwareVersion     = "espGenie Firmware Version - 1.5";
 
@@ -24,27 +25,17 @@ const char* espGenieFirmwareVersion     = "espGenie Firmware Version - 1.5";
 // OTA Support
 // Multiple Relays & Switches
 // Swap MAC Addr to DeviceID
+// Heartbeat if no updates sent.
+
 
 // Testing outside of HG - TODO Move to README.md
 // use moquette as a standalone mqtt broker on windows or other platforms (java based) https://github.com/andsel/moquette
 // use mqtt.fx as a standalone mqtt client on windows or other platforms (java based) http://mqttfx.jfx4ee.org/
   
-// Define pin mappings
-#define ONE_WIRE_BUS 2
-#define RELAY_PIN 5
-#define SWITCH_PIN 13
 
 // Set Default Poll Interval for checking sensor
 #define POLL_INTERVAL_SECS 10
 
-// MQTT Settings
-#define mqtt_server "192.168.0.161"
-#define mqtt_server_port 1883
-//#define mqtt_user ""
-//#define mqtt_password ""
-#define base_topic "home/"
-#define temperature_topic "/sensor/temp"
-#define wifi_topic "/sensor/signal"
 unsigned long  mqttReconnectIntervalSecs = 10;
 long lastMQTTReconnectionAttempt = 0;
 
@@ -53,7 +44,9 @@ float diff = 1.0;
 
 int reconnectCount = 0;
 int numberOfDevices;
-// String ssid;
+
+char mac[12];
+
 long previousrssi;
 unsigned long previousMillis = 0;
 
@@ -74,11 +67,13 @@ byte previous = HIGH;
 unsigned long firstTime; // how long since the button was first pressed
 int triggered = 0;
 
-// Replace with your network credentials
-const char* ssid     = "dw-2g";
-const char* password = "";
 
 SimpleBLE ble;
+
+// Replace with your network credentials
+const char* wifi_ssid     = "dw-2g";
+const char* password = "";
+
 
 WiFiClient espClient;
 PubSubClient mqttClient(espClient); // TODO Check client name..
@@ -124,12 +119,17 @@ void setup() {
 
   // add all your parameters here
   //wifiManager.addParameter(&customVersionText);
+
+//  chipid=ESP.getEfuseMac();//The chip ID is essentially its MAC address(length: 6 bytes).
+//  Serial.printf("ESP32 Chip ID = %04X",(uint16_t)(chipid>>32));//print High 2 bytes
+//  Serial.printf("%08X\n",(uint32_t)chipid);//print Low 4bytes.
+
   
   //Dynamically create the SSID from the ChipId
-  // ssid = "espGenie_" + String(ESP.getChipId());
+  // mac = "espGenie_"; // + String(ESP.getChipId());
 
   // Loop if unable to connect to configured Wifi
-//  if(!wifiManager.autoConnect(ssid.c_str(),NULL)) {
+//  if(!wifiManager.autoConnect(wifi_ssid.c_str(),NULL)) {
 //    Serial.println("Failed to connect and hit timeout");
 //    delay(3000);
 //    ESP.reset();
@@ -140,16 +140,20 @@ void setup() {
   Serial.println();
   Serial.println();
   Serial.print("Connecting to ");
-  Serial.print(ssid);
-  
-  WiFi.begin(ssid, password);
+  Serial.print(wifi_ssid);
 
- while(WiFi.status() != WL_CONNECTED) {
+  WiFi.begin(wifi_ssid, password);
+
+  // Get the device mac address 
+  String macString = getMacAddress();
+  macString.toCharArray(mac, macString.length());
+  
+  
+  while(WiFi.status() != WL_CONNECTED) {
     // Connect to WPA/WPA2 network. Change this line if using open or WEP network:
     delay(500);
     Serial.print(".");
   }
-
 
   Serial.println("espGenie WiFi Connected.");
   Serial.print("IP Address: ");
@@ -160,7 +164,7 @@ void setup() {
 
 
   // Set hostname
-  //WiFi.hostname(ssid);
+  //WiFi.hostname(mac);
     
   // MQTT Configuration
   mqttClient.setClient(espClient);
@@ -169,8 +173,9 @@ void setup() {
 
   // Get and configure temperature sensors
   getSensors();
-  
-  //MQTTconnect();
+
+  // connect to MQTT
+  MQTTconnect();
   
   // Configure toggle button
   pinMode(SWITCH_PIN, INPUT);
@@ -204,10 +209,14 @@ void loop() {
     }
   }
   if (currentMillis - previousMillis >= (POLL_INTERVAL_SECS  * 1000)) { // Timed Loop for sensors
+    Serial.println("Loop");
     previousMillis = currentMillis;       // Save last time we ran
 
     // send signal strength if connected to mqtt broker
-    if (mqttClient.connected()) { sendSignalStrength(); }
+    if (mqttClient.connected()) { 
+      Serial.println("Sending Signal");
+      sendSignalStrength(); 
+    }
 
     sensors.requestTemperatures();
    
@@ -328,7 +337,7 @@ void sendSignalStrength() {
     // Changed, so send the signal strength.
     if (rssi != previousrssi)
     {
-      String SignalTopic = base_topic + String(ssid) + String(wifi_topic);
+      String SignalTopic = base_topic + String(mac) + String(wifi_topic);
   
       if (! mqttClient.publish(String(SignalTopic).c_str(), String(rssi).c_str(), true)) { 
         Serial.println("Publish signal strength failed"); 
@@ -384,14 +393,14 @@ void processMessage(String msgString) {
 
 void sendTemperature(float temperature,int sensorIndex) {  
   // Construct topic containing sensor number
-  String Topic = base_topic + String(ssid) + String(temperature_topic) + sensorIndex;
+  String Topic = base_topic + String(mac) + String(temperature_topic) + sensorIndex;
   //MQTTconnect();  
    
   if (! mqttClient.publish(String(Topic).c_str(), String(temperature).c_str(), true)) { Serial.println("Publish temperature failed"); }    
 }
 
 void sendStatus(String message) {
-  String StatusTopic = base_topic + String(ssid) + "/output/status";
+  String StatusTopic = base_topic + String(mac) + "/output/status";
   if (!mqttClient.publish(String(StatusTopic).c_str(), String(message).c_str(), true)) { 
      Serial.println("Publish status message failed"); 
    }  
@@ -408,15 +417,15 @@ boolean reconnect (){
     Serial.println(mqtt_server);
     // Attempt to connect 
     #ifndef mqtt_user
-        //if (mqttClient.connect(ssid.c_str())) {  
-        if (mqttClient.connect(ssid)) {          
+        //if (mqttClient.connect(mac.c_str())) {  
+        if (mqttClient.connect(mac)) {          
             Serial.println("MQTT Connected");
         } else {
             Serial.print("MQTT Connect Failed. Return code= ");
             Serial.println(mqttClient.state());
         }
     #else
-        if (mqttClient.connect(ssid.c_str(), mqtt_user, mqtt_password)) {
+        if (mqttClient.connect(mac.c_str(), mqtt_user, mqtt_password)) {
             Serial.println("MQTT Connected");
         } else {
             Serial.print("MQTT Connect Failed. Return code= ");
@@ -432,11 +441,11 @@ boolean reconnect (){
 
 void MQTTstartup() {
   // Once connected, publish device startup message
-  String startupTopic = String(base_topic) + "automation/startup";
-  mqttClient.publish(String(startupTopic).c_str(), String(ssid).c_str(), true); 
+  String startupTopic = String(base_topic) + "/automation/startup";
+  mqttClient.publish(String(startupTopic).c_str(), String(mac).c_str(), true); 
   
   // resubscribe to command topic
-  String commandTopic = base_topic + String(ssid) + "/command";
+  String commandTopic = base_topic + String(mac) + "/command";
   Serial.print("Subscribing to command topic ");
   Serial.println(commandTopic);
   mqttClient.subscribe(String(commandTopic).c_str());
@@ -448,8 +457,8 @@ void MQTTconnect() {
     Serial.println("Attempting to establish MQTT connection");
     // Attempt to connect 
     #ifndef mqtt_user
-        //if (mqttClient.connect(ssid.c_str())) {
-        if (mqttClient.connect(ssid)) {             
+        //if (mqttClient.connect(mac.c_str())) {
+        if (mqttClient.connect(mac)) {             
             Serial.println("MQTT Connected");
         } else {
             Serial.print("MQTT Connect Failed. Return code= ");
@@ -459,7 +468,7 @@ void MQTTconnect() {
             delay(5000);
         }
     #else
-        if (mqttClient.connect(ssid.c_str(), mqtt_user, mqtt_password)) {
+        if (mqttClient.connect(mac.c_str(), mqtt_user, mqtt_password)) {
             Serial.println("MQTT Connected");
         } else {
             Serial.print("MQTT Connect Failed. Return code= ");
@@ -471,10 +480,12 @@ void MQTTconnect() {
     #endif
     
     // Publish Device Startup
+    Serial.print("Publishing Device Startup to: ");
     String startupTopic = String(base_topic) + "automation/startup";
-    mqttClient.publish(String(startupTopic).c_str(), String(ssid).c_str(), true); 
+    Serial.println(startupTopic);
+    mqttClient.publish(String(startupTopic).c_str(), String(mac).c_str(), true); 
    
-    String commandTopic = base_topic + String(ssid) + "/command";
+    String commandTopic = base_topic + String(mac) + "/command";
     Serial.print("Subscribing to command topic ");
     Serial.println(commandTopic);
     mqttClient.subscribe(String(commandTopic).c_str());
@@ -486,4 +497,19 @@ bool checkBound(float newValue, float prevValue, float maxDiff) {
          (newValue < prevValue - maxDiff || newValue > prevValue + maxDiff);
 }
 
+// borrowed from https://github.com/esp8266/Arduino/issues/313
+String getMacAddress() {
+  byte mac[6];
+  
+  WiFi.macAddress(mac);
+  String cMac = "";
+  for (int i = 0; i < 6; ++i) {
+    if (mac[i]<0x10) {cMac += "0";}
+    cMac += String(mac[i],HEX);
+    if(i<5)
+    cMac += ""; // put : or - if you want byte delimiters
+  }
+  cMac.toUpperCase();
+  return cMac;
+}
 
